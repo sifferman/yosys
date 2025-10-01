@@ -128,7 +128,7 @@ jobs:
         id: cache-iverilog
         uses: actions/cache@v4
         with:
-          path: .local/
+          path: .local/iverilog
           key: ${{ matrix.os }}-${{ steps.get-iverilog.outputs.IVERILOG_GIT }}
 
       - name: iverilog macOS deps
@@ -144,9 +144,52 @@ jobs:
           mkdir -p ${{ github.workspace }}/.local/
           cd iverilog
           autoconf
-          CC=gcc CXX=g++ ./configure --prefix=${{ github.workspace }}/.local
+          CC=gcc CXX=g++ ./configure --prefix=${{ github.workspace }}/.local/iverilog
           make -j$procs
           make install
+
+      - name: Get verilator
+        id: get-verilator
+        shell: bash
+        run: |
+          git clone https://github.com/verilator/verilator.git
+          cd verilator
+          echo "VERILATOR_GIT=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Cache verilator
+        id: cache-verilator
+        uses: actions/cache@v4
+        with:
+          path: .local/verilator
+          key: ${{ matrix.os }}-${{ steps.get-verilator.outputs.VERILATOR_GIT }}
+
+      - name: verilator ubuntu deps
+        if: steps.cache-verilator.outputs.cache-hit != 'true' && runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git help2man perl python3 make g++ \
+            libfl2 libfl-dev zlibc zlib1g zlib1g-dev \
+            autoconf flex bison
+
+      - name: verilator macOS deps
+        if: steps.cache-verilator.outputs.cache-hit != 'true' && runner.os == 'macOS'
+        shell: bash
+        run: |
+          brew install autoconf flex bison help2man
+
+      - name: Build verilator
+        if: steps.cache-verilator.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          mkdir -p ${{ github.workspace }}/.local/verilator
+          cd verilator
+          autoconf
+          ./configure --prefix=${{ github.workspace }}/.local/verilator
+          make -j$procs
+          make install
+          verilator --version
 
       - name: Download build artifact
         uses: actions/download-artifact@v4
@@ -165,6 +208,7 @@ jobs:
       - name: Run tests
         shell: bash
         run: |
+          verilator --version
           make -j$procs test TARGETS= EXTRA_TARGETS= CONFIG=$CC
 
       - name: Report errors
