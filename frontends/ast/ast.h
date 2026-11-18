@@ -220,8 +220,8 @@ namespace AST
 		std::vector<dimension_t> dimensions;
 		// Number of unpacked dimensions.
 		int unpacked_dimensions;
-		// Number of packed dimensions around elements of a signed typedef.
-		int signed_element_dimensions;
+		// Number of packed dimensions to index through to select one signed element.
+		int packed_dimensions_before_signed_element;
 
 		// this is set by simplify and used during RTLIL generation
 		AstNode* id2ast;

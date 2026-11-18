@@ -30,7 +30,7 @@ module top;
 		{concatenated[1], concatenated[0]} = 8'hf0;
 	end
 
-	// A comparison with a signed constant extends a select by its own sign.
+	// A signed operand is sign-extended to the constant's width; an unsigned one is zero-extended.
 	always_comb begin
 		assert(operands[0] == 8'shff);
 		assert(grid[1][0] == 8'shff);
@@ -42,6 +42,7 @@ module top;
 		assert(grid[0] == 16'sh00ff);
 		assert(grid[1][1:1] == 8'sh0f);
 		assert(pairs[0] == 16'sh00ff);
+		assert(pairs[0][1] == 8'shff);
 		assert(words[0] == 8'sh0f);
 		assert($left(operands[0]) == 4);
 		assert(accumulated[0] == 8'shff);
