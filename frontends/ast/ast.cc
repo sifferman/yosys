@@ -248,6 +248,7 @@ AstNode::AstNode(AstSrcLocType loc, AstNodeType type, std::unique_ptr<AstNode> c
 	range_left = -1;
 	range_right = 0;
 	unpacked_dimensions = 0;
+	// No signed element type until simplify() expands a typedef into a packed array.
 	packed_dimensions_before_signed_element = 0;
 	integer = 0;
 	realvalue = 0;
@@ -306,6 +307,8 @@ void AstNode::cloneInto(AstNode &other) const
 	other.is_enum = is_enum;
 	other.dimensions = dimensions;
 	other.unpacked_dimensions = unpacked_dimensions;
+	// Typedef expansion clones the typedef's declaration as a template, so the count
+	// must survive the clone for nested typedefs such as pair_t above to work.
 	other.packed_dimensions_before_signed_element = packed_dimensions_before_signed_element;
 	other.id2ast = id2ast;
 	other.basic_prep = basic_prep;

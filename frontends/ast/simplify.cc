@@ -2189,8 +2189,25 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 					newNode->children.insert(newNode->children.begin(), packed->clone());
 				else
 					prepend_ranges(newNode->children[0], packed.get());
-				// A packed array of a signed type is unsigned, but its elements are signed
-				// (IEEE 1800-2023 Section 7.4.1).
+				// Here newNode is a clone of the typedef's own declaration (for operand_t:
+				// "logic signed [3:0]", with is_signed set), and the lines above put the
+				// declaration's extra packed dimensions, such as the [1:0] of
+				// "operand_t [1:0] operands", in front of the typedef's [3:0].
+				//
+				// IEEE 1800-2023 Section 7.4.1: a packed array of a signed type is
+				// unsigned as a whole, but each element keeps the sign of its type. (The
+				// grammar allows "signed" only after a built-in type such as logic, so a
+				// declaration that starts with a typedef name cannot make the whole
+				// array signed.) Yosys keeps one is_signed flag for the whole flattened
+				// vector, so the flag must be cleared here, or "operands" would read as
+				// a signed 8-bit value. The element's sign is kept instead as a count of
+				// the packed dimensions just added.
+				//
+				// The count is raised in two cases. If the template is signed, its type
+				// is the signed element itself (operand_t). If the template already has a
+				// count, its type is itself an array of a signed type (pair_t), whose own
+				// is_signed was cleared when that typedef was expanded; adding [0:0] in
+				// "pair_t [0:0] pairs" then puts one more dimension before each element.
 				if (newNode->is_signed || newNode->packed_dimensions_before_signed_element)
 					newNode->packed_dimensions_before_signed_element += packed->type == AST_MULTIRANGE ? GetSize(packed->children) : 1;
 				newNode->is_signed = false;
@@ -2373,10 +2390,33 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 		// Save original number of dimensions for $size() etc.
 		integer = dims_sel;
 
-		// One index per packed dimension before a signed element selects that element;
-		// a part-select is unsigned (IEEE 1800-2023 Section 7.4.1).
-		// An lvalue stays an AST_IDENTIFIER for the dynamic range and memory write port
-		// rewrites; its sign does not matter.
+		// This block turns a select such as operands[1] or grid[1][0] into one range of
+		// bits of the flattened vector, using make_index_range(). Later, sign and width
+		// detection (detectSignWidthWorker() in genrtlil.cc) treats any identifier
+		// that has a range as unsigned, as Verilog does for every bit-select and
+		// part-select. That rule is wrong for one whole element of an array of a
+		// signed type, so the select is checked here, while its indices are still
+		// visible, before they are flattened away.
+		//
+		// The select reads one signed element when it gives exactly one index for
+		// every unpacked dimension and every packed dimension before the signed
+		// element (IEEE 1800-2023 Section 7.4.1). With operand_t [1:0] operands:
+		//     operands[1]      one index for the one packed dimension -> signed
+		//     operands[1:1]    a part-select, even of one element     -> unsigned
+		//     operands[1][2]   a bit-select inside the element        -> unsigned
+		//     operands         no select at all; this block does not run
+		// dims_sel counts all the indices and part-selects in the select. The loop
+		// rejects a part-select: an AST_RANGE node has one child for [i] and two for
+		// [msb:lsb].
+		//
+		// An assignment target is left alone (in_lvalue is set while simplify() works
+		// on the left side of an assignment). Two later rewrites in this function,
+		// the one for a dynamic index such as "x[i] = ..." and the one that turns a
+		// write to an unpacked array into a memory write port, only accept a bare
+		// AST_IDENTIFIER on the left side. The sign of a write target never matters.
+		// For "x[0] += y", the parser (addAsgnBinopStmt() in verilog_parser.y) builds
+		// "x[0] = x[0] + y"; the x[0] on the right side is a read, so it is still
+		// marked signed.
 		bool selects_one_signed_element = !in_lvalue && id2ast->packed_dimensions_before_signed_element &&
 				dims_sel == id2ast->unpacked_dimensions + id2ast->packed_dimensions_before_signed_element;
 		for (int i = id2ast->unpacked_dimensions; i < dims_sel; i++) {
@@ -2425,6 +2465,10 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 		basic_prep = true;
 		did_something = true;
 
+		// AST_TO_SIGNED is the node Yosys uses for $signed(...). Wrap the flattened
+		// select in it, the same way a select of a signed packed struct member is
+		// wrapped further down in this function. The clone already has basic_prep set,
+		// so this block does not run on it again.
 		if (selects_one_signed_element) {
 			newNode = std::make_unique<AstNode>(location, AST_TO_SIGNED, clone());
 			goto apply_newNode;
@@ -4058,7 +4102,12 @@ skip_dynamic_range_lvalue_expansion:;
 					}
 				}
 				auto buf = children[0]->clone();
-				// AST_TO_SIGNED of an identifier has the dimensions of the identifier.
+				// The array query functions ($left, $right, $low, $high, $size,
+				// $increment, $dimensions, $unpacked_dimensions, $bits) look up the
+				// declaration of an identifier to find its dimensions. A select of one
+				// signed element, such as $left(operands[0]), and a select of a signed
+				// struct member now arrive here wrapped in AST_TO_SIGNED, which changes
+				// only the sign, so look at the identifier inside it.
 				if (buf->type == AST_TO_SIGNED && buf->children[0]->type == AST_IDENTIFIER)
 					buf = std::move(buf->children[0]);
 				int mem_depth = 1;

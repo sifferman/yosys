@@ -220,7 +220,19 @@ namespace AST
 		std::vector<dimension_t> dimensions;
 		// Number of unpacked dimensions.
 		int unpacked_dimensions;
-		// Number of packed dimensions to index through to select one signed element.
+		// Set only on the declaration (AST_WIRE or AST_MEMORY) of a packed array whose
+		// elements have a signed type, for example
+		//     typedef logic signed [3:0] operand_t;
+		//     operand_t [1:0] operands;          // value 1
+		//     operand_t [1:0][2:0] grid;         // value 2
+		//     typedef operand_t [1:0] pair_t;
+		//     pair_t [0:0] pairs;                // value 2: [0:0], then pair_t's [1:0]
+		// It counts the packed dimensions written outside the signed element type, which
+		// is the number of packed indices a select must give to reach one whole element.
+		// Yosys flattens all packed dimensions into one bit vector and keeps a single
+		// is_signed flag for that vector, so without this count the sign of the element
+		// type would be lost once the typedef is expanded. 0 means the declaration has no
+		// signed element type, and the select check in simplify() does nothing.
 		int packed_dimensions_before_signed_element;
 
 		// this is set by simplify and used during RTLIL generation

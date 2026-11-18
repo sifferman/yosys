@@ -2151,6 +2151,16 @@ RTLIL::SigSpec AstNode::genRTLIL(int width_hint, bool sign_hint)
 							arg->detectSignWidth(local_width_hint, local_sign_hint);
 						sig = arg->genRTLIL(local_width_hint, local_sign_hint);
 						log_assert(local_sign_hint == arg->is_signed);
+						// This is one connection in a module instance, such as the driven[0]
+						// in "source u(driven[0])". If the expression produced exactly one
+						// existing wire, the code below connects that wire to the port as is,
+						// and asserts that the wire's sign matches the expression's sign.
+						// That no longer holds for a select of one whole signed element that
+						// covers a whole wire: with "operand_t [0:0] driven", driven[0] is
+						// all 4 bits of the unsigned wire driven, but the select is signed.
+						// Send that case to the else-if branch instead, which connects the
+						// port through a new signed wire, as it already does for any other
+						// signed expression that is not a plain wire.
 						bool is_signed_arg_of_unsigned_wire = arg->is_signed && sig.is_wire() && !sig.as_wire()->is_signed;
 						if (sig.is_wire() && !is_signed_arg_of_unsigned_wire) {
 							// if the resulting SigSpec is a wire, its
