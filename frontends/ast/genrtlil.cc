@@ -2151,22 +2151,17 @@ RTLIL::SigSpec AstNode::genRTLIL(int width_hint, bool sign_hint)
 							arg->detectSignWidth(local_width_hint, local_sign_hint);
 						sig = arg->genRTLIL(local_width_hint, local_sign_hint);
 						log_assert(local_sign_hint == arg->is_signed);
-						bool signed_cast_of_wire = arg->is_signed && sig.is_wire() && !sig.as_wire()->is_signed;
-						if (sig.is_wire() && !signed_cast_of_wire) {
-							// if the resulting SigSpec is a wire, its
-							// signedness should match that of the AstNode
-							if (arg->type == AST_IDENTIFIER && arg->id2ast && arg->id2ast->is_signed && !arg->is_signed)
-								// fully-sliced signed wire will be resolved
-								// once the module becomes available
-								log_assert(attributes.count(ID::reprocess_after));
-							else
-								log_assert(arg->is_signed == sig.as_wire()->is_signed);
-						} else if (arg->is_signed) {
-							// non-trivial signed nodes are indirected through
-							// signed wires to enable sign extension
+						// If the port is wider than arg, the hierarchy pass pads it later, and
+						// sign-extends only if the wire connected to the port is signed.
+						const bool sig_sign_differs_from_arg_sign = (sig.is_wire() && sig.as_wire()->is_signed) != arg->is_signed;
+						// The direction of the port is unknown here, and the new wire is only correct
+						// for an input. If an output could write to arg, simplify() connects it instead.
+						const bool can_connect_to_output = arg->is_implicit_cast || (sig.is_wire() && arg->type == AST_IDENTIFIER);
+						if (sig_sign_differs_from_arg_sign && !can_connect_to_output) {
+							// Connect the port to a new wire that has the sign of arg.
 							IdString wire_name = current_module->twines().add(NEW_ID);
 							RTLIL::Wire *wire = current_module->addWire(wire_name, GetSize(sig));
-							wire->is_signed = true;
+							wire->is_signed = arg->is_signed;
 							current_module->connect(wire, sig);
 							sig = wire;
 						}

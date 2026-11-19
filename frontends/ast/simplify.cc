@@ -1520,6 +1520,10 @@ bool AstNode::simplify(bool const_fold, int stage, int width_hint, bool sign_hin
 						// to be indirected to produce an unsigned connection
 						lookup_suggested = true;
 				}
+				else if (value->is_implicit_cast)
+					// a signed element or member of an unsigned wire needs
+					// to be indirected to produce a signed connection
+					lookup_suggested = true;
 				else if (contains_unbased_unsized(value.get()))
 					// unbased unsized literals extend to width of the context
 					lookup_suggested = true;

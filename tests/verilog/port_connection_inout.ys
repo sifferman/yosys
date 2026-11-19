@@ -1,0 +1,15 @@
+read_verilog -sv <<EOT
+typedef logic signed [3:0] operand_t;
+
+module bidirectional(inout [3:0] pad);
+endmodule
+
+module top(inout signed [3:0] signed_wire, inout operand_t [0:0] one_operand);
+	bidirectional full_slice_of_signed_wire(signed_wire[3:0]);
+	bidirectional only_element(one_operand[0]);
+endmodule
+EOT
+hierarchy -top top
+proc
+check -assert
+select -assert-count 2 top/w:*
